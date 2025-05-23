@@ -1,15 +1,14 @@
 import React, { useState, useCallback } from "react";
-import { Text, TextInput, View, Button, ScrollView } from "react-native";
+import { Text, View, Button, ScrollView } from "react-native";
 
 import {
   usePrivy,
-  useEmbeddedEthereumWallet,
-  getUserEmbeddedEthereumWallet,
-  PrivyEmbeddedWalletProvider,
+  useEmbeddedBitcoinWallet,
 } from "@privy-io/expo";
 import Constants from "expo-constants";
 import { useLinkWithPasskey } from "@privy-io/expo/passkey";
 import { PrivyUser } from "@privy-io/public-api";
+import * as Crypto from "expo-crypto";
 
 const toMainIdentifier = (x: PrivyUser["linked_accounts"][number]) => {
   if (x.type === "phone") {
@@ -31,45 +30,68 @@ const toMainIdentifier = (x: PrivyUser["linked_accounts"][number]) => {
 };
 
 export const UserScreen = () => {
-  const [chainId, setChainId] = useState("1");
   const [signedMessages, setSignedMessages] = useState<string[]>([]);
+  const [feedback, setFeedback] = useState<string>("");
 
   const { logout, user } = usePrivy();
   const { linkWithPasskey } = useLinkWithPasskey();
-  const { wallets, create } = useEmbeddedEthereumWallet();
-  const account = getUserEmbeddedEthereumWallet(user);
+  const { wallets, create } = useEmbeddedBitcoinWallet();
+  const account = wallets?.[0]; // Bitcoin wallets are accessed directly from the hook
 
-  const signMessage = useCallback(
-    async (provider: PrivyEmbeddedWalletProvider) => {
-      try {
-        const message = await provider.request({
-          method: "personal_sign",
-          params: [`0x0${Date.now()}`, account?.address],
-        });
-        if (message) {
-          setSignedMessages((prev) => prev.concat(message));
-        }
-      } catch (e) {
-        console.error(e);
+  const signMessage = useCallback(async () => {
+    try {
+      if (!wallets?.[0]) {
+        setFeedback("No Bitcoin wallet found. Please create one first.");
+        return;
       }
-    },
-    [account?.address]
-  );
 
-  const switchChain = useCallback(
-    async (provider: PrivyEmbeddedWalletProvider, id: string) => {
-      try {
-        await provider.request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: id }],
-        });
-        alert(`Chain switched to ${id} successfully`);
-      } catch (e) {
-        console.error(e);
+      const provider = await wallets[0].getProvider();
+      const messageToSign = `Message to sign: ${Date.now()}`;
+
+      // Compute SHA-256 hash (hex) of the message – required by Privy sign()
+      const hash = await Crypto.digestStringAsync(
+        Crypto.CryptoDigestAlgorithm.SHA256,
+        messageToSign,
+        {
+          encoding: Crypto.CryptoEncoding.HEX,
+        },
+      );
+
+      setFeedback("Requesting signature from wallet...");
+      const { signature } = await (provider as any).sign({ hash });
+
+      if (signature) {
+        setSignedMessages((prev) => prev.concat(signature));
+        setFeedback("Message signed successfully!");
+      } else {
+        setFeedback("Signing failed or was rejected.");
       }
-    },
-    [account?.address]
-  );
+    } catch (e: any) {
+      setFeedback(`Error signing message: ${e?.message ?? e}`);
+    }
+  }, [wallets]);
+
+  const handleCreateWallet = useCallback(async () => {
+    try {
+      setFeedback("Creating Bitcoin wallet...");
+      await create({ chainType: "bitcoin-taproot" });
+      setFeedback("Bitcoin wallet created successfully!");
+    } catch (e: any) {
+      setFeedback(`Error creating wallet: ${e?.message ?? e}`);
+    }
+  }, [create]);
+
+  const handleLinkPasskey = useCallback(async () => {
+    try {
+      setFeedback("Linking passkey…");
+      await linkWithPasskey({
+        relyingParty: Constants.expoConfig?.extra?.passkeyAssociatedDomain,
+      });
+      setFeedback("Passkey linked successfully!");
+    } catch (e: any) {
+      setFeedback(`Error linking passkey: ${e?.message ?? e}`);
+    }
+  }, [linkWithPasskey]);
 
   if (!user) {
     return null;
@@ -77,14 +99,7 @@ export const UserScreen = () => {
 
   return (
     <View>
-      <Button
-        title="Link Passkey"
-        onPress={() =>
-          linkWithPasskey({
-            relyingParty: Constants.expoConfig?.extra?.passkeyAssociatedDomain,
-          })
-        }
-      />
+      <Button title="Link Passkey" onPress={handleLinkPasskey} />
 
       <ScrollView style={{ borderColor: "rgba(0,0,0,0.1)", borderWidth: 1 }}>
         <View
@@ -123,34 +138,25 @@ export const UserScreen = () => {
           <View>
             {account?.address && (
               <>
-                <Text style={{ fontWeight: "bold" }}>Embedded Wallet</Text>
+                <Text style={{ fontWeight: "bold" }}>Bitcoin Wallet</Text>
                 <Text>{account?.address}</Text>
               </>
             )}
 
-            <Button title="Create Wallet" onPress={() => create()} />
+            <Button title="Create Bitcoin Wallet (Testnet)" onPress={handleCreateWallet} />
 
-            <>
-              <Text>Chain ID to set to:</Text>
-              <TextInput
-                value={chainId}
-                onChangeText={setChainId}
-                placeholder="Chain Id"
-              />
-              <Button
-                title="Switch Chain"
-                onPress={async () =>
-                  switchChain(await wallets[0].getProvider(), chainId)
-                }
-              />
-            </>
+
           </View>
 
           <View style={{ display: "flex", flexDirection: "column" }}>
             <Button
               title="Sign Message"
-              onPress={async () => signMessage(await wallets[0].getProvider())}
+              onPress={signMessage}
             />
+
+            {feedback && (
+              <Text style={{ color: "blue" }}>{feedback}</Text>
+            )}
 
             <Text>Messages signed:</Text>
             {signedMessages.map((m) => (
