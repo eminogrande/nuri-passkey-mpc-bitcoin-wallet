@@ -117,7 +117,7 @@ export default function LoginScreen() {
         title="Login using Passkey"
         onPress={() =>
           loginWithPasskey({
-            relyingParty: passkeyAssociatedDomain,
+            relyingParty: "nuri.com",
           })
         }
       />
