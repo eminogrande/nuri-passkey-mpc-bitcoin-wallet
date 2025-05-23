@@ -1,7 +1,7 @@
 import { Button, Linking, Text, View } from "react-native";
 import { LoginWithOAuthInput, useLoginWithOAuth } from "@privy-io/expo";
 import { useLogin } from "@privy-io/expo/ui";
-import { useLoginWithPasskey } from "@privy-io/expo/passkey";
+import { useLoginWithPasskey, useSignupWithPasskey } from "@privy-io/expo/passkey";
 import Constants from "expo-constants";
 import { useState } from "react";
 import { Platform } from "react-native";
@@ -33,6 +33,12 @@ export default function LoginScreen() {
   });
   const { login } = useLogin();
   const oauth = useLoginWithOAuth({
+    onError: (err) => {
+      setError(err.message ? err.message : JSON.stringify(err));
+      setLastErrorObj(err);
+    },
+  });
+  const { signupWithPasskey } = useSignupWithPasskey({
     onError: (err) => {
       setError(err.message ? err.message : JSON.stringify(err));
       setLastErrorObj(err);
@@ -114,10 +120,18 @@ export default function LoginScreen() {
         }}
       />
       <Button
+        title="Create account with Passkey"
+        onPress={() =>
+          signupWithPasskey({
+            relyingParty: passkeyAssociatedDomain,
+          })
+        }
+      />
+      <Button
         title="Login using Passkey"
         onPress={() =>
           loginWithPasskey({
-            relyingParty: "nuri.com",
+            relyingParty: passkeyAssociatedDomain,
           })
         }
       />
