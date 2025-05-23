@@ -6,7 +6,6 @@ import {
   useEmbeddedEthereumWallet,
   getUserEmbeddedEthereumWallet,
   PrivyEmbeddedWalletProvider,
-  useLinkWithOAuth,
 } from "@privy-io/expo";
 import Constants from "expo-constants";
 import { useLinkWithPasskey } from "@privy-io/expo/passkey";
@@ -37,7 +36,6 @@ export const UserScreen = () => {
 
   const { logout, user } = usePrivy();
   const { linkWithPasskey } = useLinkWithPasskey();
-  const oauth = useLinkWithOAuth();
   const { wallets, create } = useEmbeddedEthereumWallet();
   const account = getUserEmbeddedEthereumWallet(user);
 
@@ -87,17 +85,6 @@ export const UserScreen = () => {
           })
         }
       />
-      <View style={{ display: "flex", flexDirection: "column", margin: 10 }}>
-        {(["github", "google", "discord", "apple"] as const).map((provider) => (
-          <View key={provider}>
-            <Button
-              title={`Link ${provider}`}
-              disabled={oauth.state.status === "loading"}
-              onPress={() => oauth.link({ provider })}
-            ></Button>
-          </View>
-        ))}
-      </View>
 
       <ScrollView style={{ borderColor: "rgba(0,0,0,0.1)", borderWidth: 1 }}>
         <View

@@ -1,4 +1,6 @@
-# Privy Expo Starter – Real-World Setup & Security
+# Nuri Passkey Hardware MPC Multisig Wallet
+
+## Privy Expo Starter – Real-World Setup & Security
 
 This project demonstrates a production-ready Expo app using Privy for passkey-based, MPC-secured wallets.  
 It covers all the steps, config, and learnings needed to get passkeys working on iOS (TestFlight) with maximum security and user recovery.
@@ -218,3 +220,48 @@ eas build --platform ios --auto-submit --profile production --non-interactive
 If you want to enforce hardware key-only authentication in your app, make sure your onboarding flow only allows FIDO2 hardware key registration for the initial passkey, and only allows adding a phone passkey as a backup after verifying the hardware key.
 
 Let me know if you want a code snippet or UI flow for enforcing this!
+
+## ✅ Completed So Far
+
+- Expo project bootstrapped with Privy SDK  
+- iOS + Android bundle identifiers and package names set (`com.nuri.passkeytest`)  
+- Associated-Domain file (`apple-app-site-association`) hosted and validated  
+- Passkey sign-up (`signupWithPasskey`) and sign-in (`loginWithPasskey`) implemented  
+- Debug screen shows bundle ID / client IDs / error objects  
+- EAS CI: `eas build --platform ios --auto-submit --profile production --non-interactive` pushes straight to TestFlight  
+- README updated with full setup, security comparison (Bitkey • Nuri • Muun)  
+
+## 🔜 TODO (each task is purposely small)
+
+1. **Disable legacy login methods**  
+   - Remove `useLoginWithOAuth` buttons (GitHub, Google, Discord, Apple) from `LoginScreen.tsx`  
+   - Remove "Login with Privy UIs" (email passwordless) button  
+2. **Disable phone-only passkey enrolment**  
+   - Hide "Create account with Passkey" if a platform passkey is detected without a FIDO2 key  
+   - Gate sign-up behind hardware-key presence check (`authenticatorAttachment === 'cross-platform'`)  
+3. **Require hardware key at every sign-in**  
+   - Detect credential's authenticator type; reject platform credentials unless hardware key also present  
+4. **Remove Ethereum wallet logic**  
+   - Delete `useEmbeddedEthereumWallet` hooks and related UI  
+   - Remove ethers/eth-specific polyfills (`@ethersproject/shims`, etc.)  
+5. **Integrate Bitcoin MPC wallet**  
+   - Research Privy support (or alternative) for BTC MPC wallets  
+   - Create `useEmbeddedBitcoinWallet` hook (placeholder)  
+   - Display BTC address after wallet creation  
+6. **Transaction flow (BTC)**  
+   - Add "Send BTC" screen: input address + amount  
+   - Call Privy/MPC sign & broadcast endpoint (or custom backend)  
+7. **Hardware-key backup / recovery UX**  
+   - Add screen explaining recovery options (hardware key + iCloud)  
+   - Provide test flow to simulate lost phone recovery  
+8. **Security hardening**  
+   - Enforce `requireRecoveryPrompt: true` so iCloud share is always created  
+   - Add `expo-secure-store` adapter for stricter keychain flags  
+9. **QA & unit tests**  
+   - Write Jest tests for onboarding flow  
+   - Add detox/E2E test for passkey login  
+10. **Branding & polish**  
+    - Replace placeholder icons / splash with Nuri branding  
+    - Update app name in `Info.plist` & Android `strings.xml`  
+
+Feel free to pick any task and create an issue / PR!

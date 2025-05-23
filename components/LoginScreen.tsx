@@ -1,11 +1,8 @@
 import { Button, Linking, Text, View } from "react-native";
-import { LoginWithOAuthInput, useLoginWithOAuth } from "@privy-io/expo";
-import { useLogin } from "@privy-io/expo/ui";
 import { useLoginWithPasskey, useSignupWithPasskey } from "@privy-io/expo/passkey";
 import Constants from "expo-constants";
 import { useState } from "react";
 import { Platform } from "react-native";
-// import * as Application from "expo-application"; // No longer needed
 
 function renderErrorDetails(err: any) {
   if (!err) return null;
@@ -26,13 +23,6 @@ export default function LoginScreen() {
   const [error, setError] = useState("");
   const [lastErrorObj, setLastErrorObj] = useState<any>(null);
   const { loginWithPasskey } = useLoginWithPasskey({
-    onError: (err) => {
-      setError(err.message ? err.message : JSON.stringify(err));
-      setLastErrorObj(err);
-    },
-  });
-  const { login } = useLogin();
-  const oauth = useLoginWithOAuth({
     onError: (err) => {
       setError(err.message ? err.message : JSON.stringify(err));
       setLastErrorObj(err);
@@ -106,48 +96,26 @@ export default function LoginScreen() {
         and ensure the following value is listed as an `Allowed app URL scheme`:
       </Text>
       <Text style={{ fontSize: 10 }}>{scheme}</Text>
-      <Button
-        title="Login with Privy UIs"
-        onPress={() => {
-          login({ loginMethods: ["email"] })
-            .then((session) => {
-              // You can add more debug info here if needed
+      
+      <View style={{ marginTop: 20, gap: 10 }}>
+        <Button
+          title="Create account with Passkey"
+          onPress={() =>
+            signupWithPasskey({
+              relyingParty: passkeyAssociatedDomain,
             })
-            .catch((err) => {
-              setError(err.message ? err.message : JSON.stringify(err));
-              setLastErrorObj(err);
-            });
-        }}
-      />
-      <Button
-        title="Create account with Passkey"
-        onPress={() =>
-          signupWithPasskey({
-            relyingParty: passkeyAssociatedDomain,
-          })
-        }
-      />
-      <Button
-        title="Login using Passkey"
-        onPress={() =>
-          loginWithPasskey({
-            relyingParty: passkeyAssociatedDomain,
-          })
-        }
-      />
-      <View
-        style={{ display: "flex", flexDirection: "column", gap: 5, margin: 10 }}
-      >
-        {["github", "google", "discord", "apple"].map((provider) => (
-          <View key={provider}>
-            <Button
-              title={`Login with ${provider}`}
-              disabled={oauth.state.status === "loading"}
-              onPress={() => oauth.login({ provider } as LoginWithOAuthInput)}
-            ></Button>
-          </View>
-        ))}
+          }
+        />
+        <Button
+          title="Login using Passkey"
+          onPress={() =>
+            loginWithPasskey({
+              relyingParty: passkeyAssociatedDomain,
+            })
+          }
+        />
       </View>
+      
       {error && <Text style={{ color: "red" }}>Error: {error}</Text>}
     </View>
   );
