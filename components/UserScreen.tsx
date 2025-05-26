@@ -1,11 +1,12 @@
 import React, { useState, useCallback } from "react";
-import { Text, TextInput, View, Button, ScrollView } from "react-native";
+import { Text, TextInput, View, Button, ScrollView, Alert } from "react-native";
 
 import {
   usePrivy,
   useEmbeddedEthereumWallet,
   getUserEmbeddedEthereumWallet,
   PrivyEmbeddedWalletProvider,
+  useEmbeddedBitcoinWallet,
 } from "@privy-io/expo";
 import Constants from "expo-constants";
 import { useLinkWithPasskey } from "@privy-io/expo/passkey";
@@ -33,10 +34,12 @@ const toMainIdentifier = (x: PrivyUser["linked_accounts"][number]) => {
 export const UserScreen = () => {
   const [chainId, setChainId] = useState("1");
   const [signedMessages, setSignedMessages] = useState<string[]>([]);
+  const [bitcoinWalletAddress, setBitcoinWalletAddress] = useState('');
 
   const { logout, user } = usePrivy();
   const { linkWithPasskey } = useLinkWithPasskey();
   const { wallets, create } = useEmbeddedEthereumWallet();
+  const { create: bitcoinCreate } = useEmbeddedBitcoinWallet();
   const account = getUserEmbeddedEthereumWallet(user);
 
   const signMessage = useCallback(
@@ -128,7 +131,57 @@ export const UserScreen = () => {
               </>
             )}
 
-            <Button title="Create Wallet" onPress={() => create()} />
+            <Button title="Create Wallet" onPress={async () => {
+              try {
+                const newEthWallet = await create();
+                if (newEthWallet?.address) {
+                  // The address will be displayed by the existing UI once `account` updates
+                  Alert.alert("Success", `Ethereum wallet created: ${newEthWallet.address}`);
+                } else {
+                  console.warn("Ethereum wallet creation did not return an address or wallet object.");
+                  Alert.alert("Error", "Failed to create Ethereum wallet. No address returned. Please try again.");
+                }
+              } catch (error: any) {
+                console.error("Error creating Ethereum wallet:", error);
+                Alert.alert("Error", "Failed to create Ethereum wallet. Please try again.");
+              }
+            }} />
+            <Button
+              title="Create Bitcoin Wallet"
+              onPress={async () => {
+                try {
+                  console.log("Attempting to create Bitcoin wallet...");
+                  const ethAccount = getUserEmbeddedEthereumWallet(user);
+                  if (!ethAccount?.address) {
+                    Alert.alert(
+                      "Requirement",
+                      "Please create an Ethereum wallet first. Bitcoin wallet creation requires a primary Ethereum wallet."
+                    );
+                    return;
+                  }
+                  const newBitcoinWallet = await bitcoinCreate({ chainType: 'bitcoin-taproot' });
+                  if (newBitcoinWallet?.address) {
+                    setBitcoinWalletAddress(newBitcoinWallet.address);
+                    Alert.alert("Success", `Bitcoin wallet created: ${newBitcoinWallet.address}`);
+                  } else if (newBitcoinWallet) {
+                    console.warn("Bitcoin wallet creation did not return an address.");
+                    Alert.alert("Error", "Bitcoin wallet created, but no address was returned. Please contact support if this issue persists.");
+                  } else {
+                    console.warn("Bitcoin wallet creation failed, wallet object is null or undefined.");
+                    Alert.alert("Error", "Failed to create Bitcoin wallet. The wallet object was not returned. Please try again.");
+                  }
+                } catch (error: any) {
+                  console.error("Error creating Bitcoin wallet:", error);
+                  Alert.alert("Error", "Failed to create Bitcoin wallet. Please try again.");
+                }
+              }}
+            />
+            {bitcoinWalletAddress ? (
+              <>
+                <Text style={{ fontWeight: "bold" }}>Bitcoin Wallet</Text>
+                <Text>{bitcoinWalletAddress}</Text>
+              </>
+            ) : null}
 
             <>
               <Text>Chain ID to set to:</Text>
