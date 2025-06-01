@@ -177,3 +177,12 @@ This document outlines the agreed-upon rules for the development of this project
     6. **Delete stale branches:** After merge & remote push, delete the feature branch locally and remotely to reduce clutter.
 
     *AI Assistant (Cline) Responsibility:* Cline must check out the latest `main`, create feature branches for implementations, merge only after tests/builds succeed, and ensure issues and docs are updated/closed accordingly. This guarantees a clean, comprehensible history for future LLMs and humans alike.
+
+**16. API Verification & Visual Error Feedback:**
+    *Purpose:* Prevent silent failures and ensure external integrations actually respond as expected.
+
+    1. **Test external endpoints first:** Before coding against an external API (block explorer, backend route, 3rd-party), run a quick `curl` (or Postman) call with a sample value and verify the shape of the response. Document this step in the task or PR description.
+    2. **Visual error states:** Any user-facing operation that can fail (API fetch, wallet action, etc.) must surface a clear message in the UI ‑ not solely in console logs. This can be a banner/toast/text label but must be visible without attaching a debugger.
+    3. **Graceful fallbacks:** If an operation fails, the UI should still render (e.g., show `Error` or `N/A`) rather than crash or spin forever.
+
+    *AI Assistant (Cline) Responsibility:* Always include a one-off test of the endpoint in the workflow notes (using dummy data), and implement at least minimal visual feedback for success/error/loading states when coding UI functionality.

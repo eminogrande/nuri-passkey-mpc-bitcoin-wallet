@@ -1,5 +1,8 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { Text, View, Button, ScrollView } from "react-native";
+import { TouchableOpacity } from "react-native";
+import * as Clipboard from "expo-clipboard";
+import QRCode from "react-native-qrcode-styled";
 
 import {
   usePrivy,
@@ -34,6 +37,9 @@ const toMainIdentifier = (x: PrivyUser["linked_accounts"][number]) => {
 export const UserScreen = () => {
   const [signedMessages, setSignedMessages] = useState<string[]>([]);
   const [feedback, setFeedback] = useState<string>("");
+  const [balance, setBalance] = useState<string | null>(null);
+  const [balanceLoading, setBalanceLoading] = useState(false);
+  const [balanceError, setBalanceError] = useState<string | null>(null);
 
   const { logout, user } = usePrivy();
   const { linkWithPasskey } = useLinkWithPasskey();
@@ -65,6 +71,33 @@ export const UserScreen = () => {
 
     ensureEthereumWalletExists();
   }, [user, ethAccount, ethWallets, createEthereumWallet]);
+
+  // Fetch Bitcoin main-net balance helper
+  const fetchBalance = useCallback(async () => {
+    if (!account?.address) return;
+    try {
+      setBalanceLoading(true);
+      const res = await fetch(`https://blockstream.info/api/address/${account.address}`);
+      const json = await res.json();
+      const funded = json?.chain_stats?.funded_txo_sum ?? 0;
+      const spent = json?.chain_stats?.spent_txo_sum ?? 0;
+      setBalance(String(funded - spent));
+      setBalanceError(null);
+    } catch (e) {
+      const msg = (e as any)?.message ?? e;
+      console.error("Error fetching BTC balance", msg);
+      setFeedback(`Error fetching BTC balance: ${msg}`);
+      setBalance(null);
+      setBalanceError(String(msg));
+    } finally {
+      setBalanceLoading(false);
+    }
+  }, [account?.address, setBalanceLoading]);
+
+  // Initial fetch when address becomes available
+  useEffect(() => {
+    fetchBalance();
+  }, [fetchBalance]);
 
   const signMessage = useCallback(async () => {
     try {
@@ -167,7 +200,25 @@ export const UserScreen = () => {
             {account?.address && (
               <>
                 <Text style={{ fontWeight: "bold" }}>Bitcoin Wallet</Text>
-                <Text>{account?.address}</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}>
+                  <Text selectable>{account.address}</Text>
+                  <TouchableOpacity onPress={() => {
+                    Clipboard.setStringAsync(account.address);
+                    setFeedback("Address copied");
+                  }}>
+                    <Text style={{ color: "blue", marginLeft: 6 }}>Copy</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={{ marginVertical: 10 }}>
+                  <QRCode value={account.address} size={120} />
+                </View>
+                <Text>
+                  Balance: {balanceLoading && "Loading…"}
+                  {!balanceLoading && balance !== null && `${balance} sats`}
+                  {!balanceLoading && balance === null && balanceError && `Error`}
+                  {!balanceLoading && balance === null && !balanceError && `N/A`}
+                </Text>
+                <Button title="Refresh Balance" onPress={fetchBalance} />
               </>
             )}
 
