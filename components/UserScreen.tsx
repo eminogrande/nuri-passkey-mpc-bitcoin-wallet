@@ -39,6 +39,7 @@ export const UserScreen = () => {
   const [feedback, setFeedback] = useState<string>("");
   const [balance, setBalance] = useState<string | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
+  const [balanceError, setBalanceError] = useState<string | null>(null);
 
   const { logout, user } = usePrivy();
   const { linkWithPasskey } = useLinkWithPasskey();
@@ -71,26 +72,32 @@ export const UserScreen = () => {
     ensureEthereumWalletExists();
   }, [user, ethAccount, ethWallets, createEthereumWallet]);
 
-  // Fetch Bitcoin testnet balance once when address becomes available
+  // Fetch Bitcoin main-net balance helper
+  const fetchBalance = useCallback(async () => {
+    if (!account?.address) return;
+    try {
+      setBalanceLoading(true);
+      const res = await fetch(`https://blockstream.info/api/address/${account.address}`);
+      const json = await res.json();
+      const funded = json?.chain_stats?.funded_txo_sum ?? 0;
+      const spent = json?.chain_stats?.spent_txo_sum ?? 0;
+      setBalance(String(funded - spent));
+      setBalanceError(null);
+    } catch (e) {
+      const msg = (e as any)?.message ?? e;
+      console.error("Error fetching BTC balance", msg);
+      setFeedback(`Error fetching BTC balance: ${msg}`);
+      setBalance(null);
+      setBalanceError(String(msg));
+    } finally {
+      setBalanceLoading(false);
+    }
+  }, [account?.address, setBalanceLoading]);
+
+  // Initial fetch when address becomes available
   useEffect(() => {
-    const fetchBalance = async () => {
-      if (!account?.address) return;
-      try {
-        setBalanceLoading(true);
-        const res = await fetch(`https://blockstream.info/testnet/api/address/${account.address}`);
-        const json = await res.json();
-        const funded = json?.chain_stats?.funded_txo_sum ?? 0;
-        const spent = json?.chain_stats?.spent_txo_sum ?? 0;
-        setBalance(String(funded - spent));
-      } catch (e) {
-        console.error("Error fetching BTC balance", e);
-        setBalance(null);
-      } finally {
-        setBalanceLoading(false);
-      }
-    };
     fetchBalance();
-  }, [account?.address]);
+  }, [fetchBalance]);
 
   const signMessage = useCallback(async () => {
     try {
@@ -206,8 +213,12 @@ export const UserScreen = () => {
                   <QRCode value={account.address} size={120} />
                 </View>
                 <Text>
-                  Balance: {balanceLoading ? "Loading…" : balance !== null ? `${balance} sats` : "N/A"}
+                  Balance: {balanceLoading && "Loading…"}
+                  {!balanceLoading && balance !== null && `${balance} sats`}
+                  {!balanceLoading && balance === null && balanceError && `Error`}
+                  {!balanceLoading && balance === null && !balanceError && `N/A`}
                 </Text>
+                <Button title="Refresh Balance" onPress={fetchBalance} />
               </>
             )}
 
