@@ -36,6 +36,9 @@ const toMainIdentifier = (x: PrivyUser["linked_accounts"][number]) => {
   return x.type;
 };
 
+// simple hex decoder
+const hexToBytes = (hex: string) => Uint8Array.from(hex.match(/.{2}/g)!.map((b) => parseInt(b, 16)));
+
 export const UserScreen = () => {
   const [signedMessages, setSignedMessages] = useState<string[]>([]);
   const [feedback, setFeedback] = useState<string>("");
@@ -204,11 +207,23 @@ export const UserScreen = () => {
       const utxos = await utxRes.json();
       if (!utxos.length) throw new Error("No UTXOs");
       const useUtxo = utxos[0];
+
+      // fetch parent transaction to obtain scriptPubKey
+      const parentRes = await fetch(`https://mempool.space/api/tx/${useUtxo.txid}`);
+      const parentJson = await parentRes.json();
+      const vout = parentJson.vout[useUtxo.vout];
+      const scriptHex: string = vout.scriptpubkey; // hex string
+      const utxoValue: number = vout.value; // sats
+
       const tx = new Transaction();
-      tx.addInput({ txid: useUtxo.txid, index: useUtxo.vout, sequence: 0xffffffff });
+      tx.addInput({
+        txid: useUtxo.txid,
+        index: useUtxo.vout,
+        witnessUtxo: { script: hexToBytes(scriptHex), amount: BigInt(utxoValue) },
+      });
       const sendVal = BigInt(parseInt(amount));
       const feeVal = BigInt(feeSat || 0);
-      const changeVal = BigInt(useUtxo.value) - sendVal - feeVal;
+      const changeVal = BigInt(utxoValue) - sendVal - feeVal;
       tx.addOutputAddress(recipient, sendVal);
       if (changeVal > BigInt(0)) tx.addOutputAddress(account.address, changeVal);
       const psbtHex = bytesToHex(tx.toPSBT());
