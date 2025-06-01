@@ -1,9 +1,11 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { Text, View, Button, ScrollView } from "react-native";
 
 import {
   usePrivy,
   useEmbeddedBitcoinWallet,
+  useEmbeddedEthereumWallet,
+  getUserEmbeddedEthereumWallet,
 } from "@privy-io/expo";
 import Constants from "expo-constants";
 import { useLinkWithPasskey } from "@privy-io/expo/passkey";
@@ -35,8 +37,34 @@ export const UserScreen = () => {
 
   const { logout, user } = usePrivy();
   const { linkWithPasskey } = useLinkWithPasskey();
+
+  // Bitcoin wallet hooks
   const { wallets, create } = useEmbeddedBitcoinWallet();
   const account = wallets?.[0]; // Bitcoin wallets are accessed directly from the hook
+
+  // Ethereum wallet hooks (for automatic creation if missing)
+  const {
+    wallets: ethWallets,
+    create: createEthereumWallet,
+  } = useEmbeddedEthereumWallet();
+  const ethAccount = getUserEmbeddedEthereumWallet(user);
+
+  // Ensure the user has an Ethereum wallet – required by Privy backend before Bitcoin wallet creation.
+  useEffect(() => {
+    const ensureEthereumWalletExists = async () => {
+      try {
+        if (user && !ethAccount && (ethWallets?.length ?? 0) === 0) {
+          console.log("No Ethereum wallet detected. Creating one automatically …");
+          await createEthereumWallet();
+          console.log("Ethereum wallet creation triggered successfully.");
+        }
+      } catch (e: any) {
+        console.error("Auto-create Ethereum wallet failed:", e?.message ?? e);
+      }
+    };
+
+    ensureEthereumWalletExists();
+  }, [user, ethAccount, ethWallets, createEthereumWallet]);
 
   const signMessage = useCallback(async () => {
     try {
