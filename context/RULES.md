@@ -134,7 +134,7 @@ This document outlines the agreed-upon rules for the development of this project
     *   **Practice for Implementation:**
         *   When executing a task, Cline must implement *only* what is defined in that task's "Detailed Sub-Tasks" and meet its "Acceptance Criteria."
         *   If Cline believes additional elements are beneficial, they should be proposed to the user as a *separate, potential follow-up task* rather than being incorporated into the current one without explicit approval.
-    *   **Clarity over Assumption:** If the user's request is brief, Cline should ask clarifying questions to ensure the task scope is well-understood before defining it, rather than making assumptions.
+        *   **Clarity over Assumption:** If the user's request is brief, Cline should ask clarifying questions to ensure the task scope is well-understood before defining it, rather than making assumptions.
 
 ---
 
@@ -155,3 +155,25 @@ This document outlines the agreed-upon rules for the development of this project
         *   When using tools like `replace_in_file`, the `SEARCH` block must be as minimal and precise as possible to target *only* the lines intended for modification.
         *   Context lines around the change should be used judiciously for uniqueness but not so broadly as to risk including unrelated code that might be accidentally altered or removed.
         *   The AI assistant (Cline) is responsible for crafting these diffs with extreme care, especially in shared or complex files, and should double-check the diff's scope before proposing it.
+
+---
+
+**15. Standard Git Workflow & Branching Strategy:**
+    *Purpose:* To keep history linear, make reviews predictable, and ensure every contribution—human or AI—follows the same, easy-to-parse pattern.
+
+    1. **Always branch from `main`:**
+        *   `git checkout main && git pull` (ensure up-to-date)
+        *   `git checkout -b feature/<short-task-name>`
+    2. **Commit scope:** All commits on the feature branch must relate only to the current task (Rule #10 for traceability).
+    3. **Test before merge:**
+        *   Local lint/tests pass.
+        *   For mobile: build succeeds (e.g., `eas build …`) and, when applicable, TestFlight verification is green.
+    4. **Merge back to `main`:**
+        *   If using PRs, open a pull-request referencing the task ID; otherwise: `git checkout main && git merge --no-ff feature/<task>`.
+        *   Push to remote: `git push origin main`.
+    5. **Close artefacts:**
+        *   Update the task's markdown file in `/Issues` or `/tasks` with results.
+        *   Comment & close the corresponding GitHub Issue.
+    6. **Delete stale branches:** After merge & remote push, delete the feature branch locally and remotely to reduce clutter.
+
+    *AI Assistant (Cline) Responsibility:* Cline must check out the latest `main`, create feature branches for implementations, merge only after tests/builds succeed, and ensure issues and docs are updated/closed accordingly. This guarantees a clean, comprehensible history for future LLMs and humans alike.
