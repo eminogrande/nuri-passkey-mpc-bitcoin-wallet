@@ -1,8 +1,10 @@
 import React, { useState, useCallback, useEffect } from "react";
-import { Text, View, Button, ScrollView } from "react-native";
+import { Text, View, Button, ScrollView, TextInput, Linking, Alert } from "react-native";
 import { TouchableOpacity } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import QRCode from "react-native-qrcode-styled";
+import { bytesToHex } from "@noble/hashes/utils";
+import { Transaction } from "@scure/btc-signer";
 
 import {
   usePrivy,
@@ -40,6 +42,13 @@ export const UserScreen = () => {
   const [balance, setBalance] = useState<string | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
   const [balanceError, setBalanceError] = useState<string | null>(null);
+
+  // ---- Send BTC states ----
+  const [amount, setAmount] = useState<string>(""); // sats
+  const [recipient, setRecipient] = useState<string>("");
+  const [feeSat, setFeeSat] = useState<number | null>(null);
+  const [feeLoading, setFeeLoading] = useState(false);
+  const [signedTxHex, setSignedTxHex] = useState<string | null>(null);
 
   const { logout, user } = usePrivy();
   const { linkWithPasskey } = useLinkWithPasskey();
@@ -154,6 +163,80 @@ export const UserScreen = () => {
     }
   }, [linkWithPasskey]);
 
+  // address validation function
+  const isValidAddress = (addr: string) => /^(bc1|[13])[a-z0-9]{25,59}$/i.test(addr);
+
+  // Fetch fee rate helper
+  const fetchFee = useCallback(async () => {
+    try {
+      setFeeLoading(true);
+      const res = await fetch("https://mempool.space/api/v1/fees/recommended");
+      const json = await res.json();
+      const rate = json?.halfHourFee ?? 10; // sat/vB
+      // naive size 110 vB
+      setFeeSat(rate * 110);
+    } catch (e) {
+      console.error("Fee fetch error", e);
+      setFeedback(`Fee fetch error: ${(e as any).message ?? e}`);
+      setFeeSat(null);
+    } finally {
+      setFeeLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchFee(); }, [fetchFee]);
+
+  const handleMax = () => {
+    if (balance !== null && feeSat !== null) {
+      const max = Number(balance) - feeSat;
+      if (max > 0) setAmount(String(max));
+    }
+  };
+
+  const canSign = parseInt(amount) > 0 && isValidAddress(recipient) && feeSat !== null && balance !== null && parseInt(amount)+feeSat! <= parseInt(balance);
+
+  const buildAndSign = async () => {
+    try {
+      if (!account) return;
+      setFeedback("Building transaction…");
+      // fetch utxos
+      const utxRes = await fetch(`https://mempool.space/api/address/${account.address}/utxo`);
+      const utxos = await utxRes.json();
+      if (!utxos.length) throw new Error("No UTXOs");
+      const useUtxo = utxos[0];
+      const tx = new Transaction();
+      tx.addInput({ txid: useUtxo.txid, index: useUtxo.vout, sequence: 0xffffffff });
+      const sendVal = BigInt(parseInt(amount));
+      const feeVal = BigInt(feeSat || 0);
+      const changeVal = BigInt(useUtxo.value) - sendVal - feeVal;
+      tx.addOutputAddress(recipient, sendVal);
+      if (changeVal > BigInt(0)) tx.addOutputAddress(account.address, changeVal);
+      const psbtHex = bytesToHex(tx.toPSBT());
+      setFeedback("Signing…");
+      const provider = await account.getProvider();
+      const { signedTransaction } = await (provider as any).signTransaction({ psbt: psbtHex });
+      setSignedTxHex(signedTransaction);
+      setFeedback("Signed. Ready to broadcast.");
+    } catch (e) {
+      setFeedback(`Sign error: ${(e as any).message ?? e}`);
+      setSignedTxHex(null);
+    }
+  };
+
+  const broadcast = async () => {
+    if (!signedTxHex) return;
+    try {
+      setFeedback("Broadcasting…");
+      const res = await fetch("https://mempool.space/api/tx", { method: "POST", body: signedTxHex });
+      const txid = await res.text();
+      if (res.status !== 200) throw new Error(txid);
+      setFeedback(`Broadcasted ${txid}`);
+      Linking.openURL(`https://mempool.space/tx/${txid}`);
+    } catch (e) {
+      setFeedback(`Broadcast error: ${(e as any).message ?? e}`);
+    }
+  };
+
   if (!user) {
     return null;
   }
@@ -219,6 +302,46 @@ export const UserScreen = () => {
                   {!balanceLoading && balance === null && !balanceError && `N/A`}
                 </Text>
                 <Button title="Refresh Balance" onPress={fetchBalance} />
+
+                {/* Send Bitcoin Section */}
+                <View style={{ marginTop: 20, width: "100%", gap: 6 }}>
+                  <Text style={{ fontWeight: "bold" }}>Send Bitcoin</Text>
+
+                  <View style={{ flexDirection: "row", alignItems: "center" }}>
+                    <TextInput
+                      style={{ borderWidth: 1, flex: 1, padding: 6 }}
+                      value={amount}
+                      onChangeText={setAmount}
+                      keyboardType="numeric"
+                      placeholder="Amount (sats)"
+                    />
+                    <Button title="MAX" onPress={handleMax} />
+                  </View>
+                  <Text>
+                    Fee: {feeLoading ? "Loading…" : feeSat !== null ? `${feeSat} sats` : "Error"}
+                  </Text>
+
+                  <View style={{ flexDirection: "row", alignItems: "center" }}>
+                    <TextInput
+                      style={{ borderWidth: 1, flex: 1, padding: 6 }}
+                      value={recipient}
+                      onChangeText={setRecipient}
+                      placeholder="Recipient address"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                    <Button title="Paste" onPress={async () => {
+                      const clip = await Clipboard.getStringAsync();
+                      setRecipient(clip);
+                    }} />
+                  </View>
+                  {!isValidAddress(recipient) && recipient.length > 0 && (
+                    <Text style={{ color: "red" }}>Invalid address</Text>
+                  )}
+
+                  <Button title="Sign Transaction" onPress={buildAndSign} disabled={!canSign} />
+                  <Button title="Broadcast" onPress={broadcast} disabled={!signedTxHex} />
+                </View>
               </>
             )}
 
