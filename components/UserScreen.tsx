@@ -39,12 +39,20 @@ const toMainIdentifier = (x: PrivyUser["linked_accounts"][number]) => {
 // simple hex decoder
 const hexToBytes = (hex: string) => Uint8Array.from(hex.match(/.{2}/g)!.map((b) => parseInt(b, 16)));
 
+// -----------------------------------------------------------------------------
+// 🔧  Developer debug helper – collects runtime events & errors on-screen
+// -----------------------------------------------------------------------------
+//  Usage:   log('text')  or log({obj})
+//  Keeps a rolling buffer (max 200 entries) so that testers can scroll & copy
+// -----------------------------------------------------------------------------
+
 export const UserScreen = () => {
   const [signedMessages, setSignedMessages] = useState<string[]>([]);
   const [feedback, setFeedback] = useState<string>("");
   const [balance, setBalance] = useState<string | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
   const [balanceError, setBalanceError] = useState<string | null>(null);
+  const [debugLines, setDebugLines] = useState<string[]>([]);
 
   // ---- Send BTC states ----
   const [amount, setAmount] = useState<string>(""); // sats
@@ -84,13 +92,24 @@ export const UserScreen = () => {
     ensureEthereumWalletExists();
   }, [user, ethAccount, ethWallets, createEthereumWallet]);
 
+  const log = useCallback((msg: any) => {
+    const str = typeof msg === "string" ? msg : JSON.stringify(msg, null, 2);
+    console.log("[UI]", str);
+    setDebugLines((prev) => {
+      const next = prev.concat(str);
+      return next.length > 200 ? next.slice(next.length - 200) : next;
+    });
+  }, []);
+
   // Fetch Bitcoin main-net balance helper
   const fetchBalance = useCallback(async () => {
     if (!account?.address) return;
     try {
       setBalanceLoading(true);
+      log(`Fetching balance for ${account.address}`);
       const res = await fetch(`https://blockstream.info/api/address/${account.address}`);
       const json = await res.json();
+      log({ balanceResponse: json });
       const funded = json?.chain_stats?.funded_txo_sum ?? 0;
       const spent = json?.chain_stats?.spent_txo_sum ?? 0;
       setBalance(String(funded - spent));
@@ -99,6 +118,7 @@ export const UserScreen = () => {
       const msg = (e as any)?.message ?? e;
       console.error("Error fetching BTC balance", msg);
       setFeedback(`Error fetching BTC balance: ${msg}`);
+      log(`Balance fetch error: ${msg}`);
       setBalance(null);
       setBalanceError(String(msg));
     } finally {
@@ -173,14 +193,17 @@ export const UserScreen = () => {
   const fetchFee = useCallback(async () => {
     try {
       setFeeLoading(true);
+      log("Fetching fee estimate (halfHourFee) …");
       const res = await fetch("https://mempool.space/api/v1/fees/recommended");
       const json = await res.json();
+      log({ feeResponse: json });
       const rate = json?.halfHourFee ?? 10; // sat/vB
       // naive size 110 vB
       setFeeSat(rate * 110);
     } catch (e) {
       console.error("Fee fetch error", e);
       setFeedback(`Fee fetch error: ${(e as any).message ?? e}`);
+      log(`Fee fetch error: ${(e as any).message ?? e}`);
       setFeeSat(null);
     } finally {
       setFeeLoading(false);
@@ -202,24 +225,37 @@ export const UserScreen = () => {
     try {
       if (!account) return;
       setFeedback("Building transaction…");
+      log("Building PSBT …");
       // fetch utxos
       const utxRes = await fetch(`https://mempool.space/api/address/${account.address}/utxo`);
       const utxos = await utxRes.json();
+      log({ utxos });
       if (!utxos.length) throw new Error("No UTXOs");
       const useUtxo = utxos[0];
 
       // fetch parent transaction to obtain scriptPubKey
       const parentRes = await fetch(`https://mempool.space/api/tx/${useUtxo.txid}`);
       const parentJson = await parentRes.json();
+      log({ parentJsonSlice: parentJson?.vout?.[useUtxo.vout] });
       const vout = parentJson.vout[useUtxo.vout];
       const scriptHex: string = vout.scriptpubkey; // hex string
       const utxoValue: number = vout.value; // sats
+
+      if (!('taprootInternalKey' in account) || !(account as any).taprootInternalKey) {
+        log('Wallet missing taprootInternalKey; signing will fail');
+      }
+
+      const taprootInternalKey = (account as any).taprootInternalKey; // hex string
+      const taprootBip32Derivation = (account as any).taprootBip32Derivation; // array
 
       const tx = new Transaction();
       tx.addInput({
         txid: useUtxo.txid,
         index: useUtxo.vout,
         witnessUtxo: { script: hexToBytes(scriptHex), amount: BigInt(utxoValue) },
+        // Provide derivation so Privy can sign
+        tapInternalKey: taprootInternalKey ? hexToBytes(taprootInternalKey) : undefined,
+        tapBip32Derivation: taprootBip32Derivation ?? undefined,
       });
       const sendVal = BigInt(parseInt(amount));
       const feeVal = BigInt(feeSat || 0);
@@ -227,13 +263,17 @@ export const UserScreen = () => {
       tx.addOutputAddress(recipient, sendVal);
       if (changeVal > BigInt(0)) tx.addOutputAddress(account.address, changeVal);
       const psbtHex = bytesToHex(tx.toPSBT());
+      log({ psbtHex });
       setFeedback("Signing…");
+      log("Calling provider.signTransaction …");
       const provider = await account.getProvider();
       const { signedTransaction } = await (provider as any).signTransaction({ psbt: psbtHex });
+      log({ signedTransaction });
       setSignedTxHex(signedTransaction);
       setFeedback("Signed. Ready to broadcast.");
     } catch (e) {
       setFeedback(`Sign error: ${(e as any).message ?? e}`);
+      log(`Sign error: ${(e as any).message ?? e}`);
       setSignedTxHex(null);
     }
   };
@@ -242,13 +282,16 @@ export const UserScreen = () => {
     if (!signedTxHex) return;
     try {
       setFeedback("Broadcasting…");
+      log("Broadcasting raw tx …");
       const res = await fetch("https://mempool.space/api/tx", { method: "POST", body: signedTxHex });
       const txid = await res.text();
       if (res.status !== 200) throw new Error(txid);
       setFeedback(`Broadcasted ${txid}`);
+      log(`Broadcasted ${txid}`);
       Linking.openURL(`https://mempool.space/tx/${txid}`);
     } catch (e) {
       setFeedback(`Broadcast error: ${(e as any).message ?? e}`);
+      log(`Broadcast error: ${(e as any).message ?? e}`);
     }
   };
 
@@ -397,6 +440,18 @@ export const UserScreen = () => {
               </React.Fragment>
             ))}
           </View>
+          {/* Developer Debug Log (scrollable) */}
+          {debugLines.length > 0 && (
+            <View style={{ maxHeight: 180, borderWidth: 1, borderColor: "#ccc", marginVertical: 10 }}>
+              <ScrollView>
+                {debugLines.map((l, i) => (
+                  <Text key={i} style={{ fontSize: 10, color: "#555" }} selectable>
+                    {l}
+                  </Text>
+                ))}
+              </ScrollView>
+            </View>
+          )}
           <Button title="Logout" onPress={logout} />
         </View>
       </ScrollView>
