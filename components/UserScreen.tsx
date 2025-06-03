@@ -5,6 +5,7 @@ import * as Clipboard from "expo-clipboard";
 import QRCode from "react-native-qrcode-styled";
 import { bytesToHex } from "@noble/hashes/utils";
 import { Transaction, bip32Path } from "@scure/btc-signer";
+import SecuritySettingsScreen from "../app/settings/security";
 
 import {
   usePrivy,
@@ -56,6 +57,7 @@ export const UserScreen = () => {
   const [balanceLoading, setBalanceLoading] = useState(false);
   const [balanceError, setBalanceError] = useState<string | null>(null);
   const [debugLines, setDebugLines] = useState<string[]>([]);
+  const [showSecuritySettings, setShowSecuritySettings] = useState(false);
 
   // ---- Send BTC states ----
   const [amount, setAmount] = useState<string>(""); // sats
@@ -583,9 +585,28 @@ export const UserScreen = () => {
     return null;
   }
 
+  // Show Security Settings screen if toggled
+  if (showSecuritySettings) {
+    return (
+      <View style={{ flex: 1 }}>
+        <Button 
+          title="← Back to Wallet" 
+          onPress={() => setShowSecuritySettings(false)} 
+        />
+        <SecuritySettingsScreen />
+      </View>
+    );
+  }
+
   return (
     <View>
       <Button title="Link Passkey" onPress={handleLinkPasskey} />
+      
+      {/* Add Security Settings button */}
+      <Button 
+        title="🔐 Wallet Export/Recovery" 
+        onPress={() => setShowSecuritySettings(true)} 
+      />
 
       <ScrollView style={{ borderColor: "rgba(0,0,0,0.1)", borderWidth: 1 }}>
         <View

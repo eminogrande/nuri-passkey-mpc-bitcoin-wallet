@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import * as SecureStore from 'expo-secure-store';
-import { usePrivy } from '@privy-io/expo'; // To get walletId and privyAppId
+import { usePrivy, useEmbeddedBitcoinWallet } from '@privy-io/expo'; // To get walletId and privyAppId
 import { getOrCreatePasskey, derivePrfSecret, utils } from './usePasskey';
 import Constants from 'expo-constants';
 
@@ -69,13 +69,18 @@ export function useWalletExport() {
   const [exportResult, setExportResult] = useState<string | null>(null); // To store the final JSON string
 
   const { user, getAccessToken } = usePrivy();
+  const { wallets: bitcoinWallets } = useEmbeddedBitcoinWallet();
   const privyAppId = Constants.expoConfig?.extra?.privyAppId;
 
   const onExport = async () => {
-    if (!user || !user.wallet || !user.wallet.address) {
+    // Check for Bitcoin wallet first
+    const bitcoinWallet = bitcoinWallets?.[0];
+    
+    if (!user || !bitcoinWallet) {
       setExportError(new Error('User or wallet not available.'));
       return;
     }
+    
     if (!privyAppId) {
       setExportError(new Error('Privy App ID not configured.'));
       return;
@@ -103,22 +108,26 @@ export function useWalletExport() {
         throw new Error('Could not retrieve access token for Privy API.');
       }
 
-      // Determine wallet ID - assuming embedded wallet is the target
-      // The Privy User object might have wallet.id or similar for the specific wallet ID.
-      // For now, let's assume the primary embedded wallet.
-      // The Privy API for export is /v1/wallets/{wallet_id}/export
-      // We need the actual ID of the wallet, not just its address.
-      // Let's find the embedded wallet from linkedAccounts
-      const embeddedWallet = user.linkedAccounts?.find(
-        (acc) => acc.type === 'wallet' && acc.walletClientType === 'privy' && acc.address === user.wallet?.address
-      );
-
-      if (!embeddedWallet || !embeddedWallet.id) {
-        throw new Error('Could not find embedded wallet ID for export.');
+      // Get the wallet ID from the Bitcoin wallet object
+      // Bitcoin wallets from useEmbeddedBitcoinWallet have an 'id' property
+      let walletId = (bitcoinWallet as any).id;
+      
+      if (!walletId) {
+        // If no ID on the wallet object, try to find it in linked_accounts
+        const btcLinkedAccount = user.linked_accounts?.find(
+          (acc: any) => acc.type === 'wallet' && 
+                       acc.walletClientType === 'privy' && 
+                       acc.address === bitcoinWallet.address
+        );
+        
+        if (!btcLinkedAccount || !(btcLinkedAccount as any).id) {
+          throw new Error('Could not find wallet ID for export. Wallet may not be fully initialized.');
+        }
+        
+        walletId = (btcLinkedAccount as any).id;
       }
-      const walletId = embeddedWallet.id;
+      
       console.log('Using walletId for export:', walletId);
-
 
       const { ciphertext, encapsulated_key } = await fetchPrivyExport(privyAppId, walletId, accessToken);
       console.log('Received ciphertext length:', ciphertext.length, 'enc_key length:', encapsulated_key.length);
@@ -137,7 +146,7 @@ export function useWalletExport() {
       console.log('AES-GCM encryption complete. Encrypted blob length:', encryptedHpkeBlob.byteLength);
 
       const payload = {
-        credId: arrayBufferToBase64Url(credIdBytes.buffer), // Use the original credIdBytes
+        credId: arrayBufferToBase64Url(credIdBytes.buffer as ArrayBuffer), // Use the original credIdBytes
         salt: btoaArr(salt),
         iv: btoaArr(iv),
         blob: btoaArr(new Uint8Array(encryptedHpkeBlob)),
